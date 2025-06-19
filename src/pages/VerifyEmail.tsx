@@ -82,12 +82,10 @@ const VerifyEmail = () => {
             )}
             <form onSubmit={handleSubmit}>
               <div className="mb-6">
-                <label
-                  className="block text-sm font-medium text-gray-700 mb-3"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-3">
                   Code
                 </label>
-                <div className="flex justify-center space-x-2">
+                <div className="grid grid-cols-4 gap-2 sm:flex sm:justify-center sm:space-x-2">
                   {code.map((digit, index) => (
                     <input
                       key={index}
@@ -101,7 +99,7 @@ const VerifyEmail = () => {
                       onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
                         handleKeyDown(index, e)
                       }
-                      className="w-12 h-12 text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all text-lg font-medium"
+                      className="w-full h-12 text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all text-lg font-medium"
                     />
                   ))}
                 </div>
