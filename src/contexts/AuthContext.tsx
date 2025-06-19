@@ -1,117 +1,166 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+// src/contexts/AuthContext.tsx
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
-import { sendOtp, signUp, verifyEmail, login, logout, forgotPassword, resetPassword } from '../services/authService';
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  image?: string;
-}
+import { jwtDecode } from 'jwt-decode';
 
 interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (name: string, email: string, password: string) => Promise<boolean>;
-  logout: () => void;
-  isAuthenticated: boolean;
-  verifyEmail: (code: string) => Promise<boolean>;
-  needsVerification: boolean;
+  user: { id: string } | null;
   userEmail: string;
-  sendOtp: (email: string) => Promise<boolean>;
-  forgotPassword: (email: string) => Promise<boolean>;
-  resetPassword: (password: string, confirmPassword: string, token: string) => Promise<boolean>;
+  isAuthenticated: boolean;
+  sendOTP: (email: string) => Promise<boolean>;
+  signup: (name: string, email: string, password: string, otp: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
+  verifyEmail: (code: string) => Promise<boolean>;
+  logout: () => void;
+}
+
+interface DecodedToken {
+  userId: string;
+  iat: number;
+  exp: number;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [needsVerification, setNeedsVerification] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<{ id: string } | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const navigate = useNavigate();
 
+  const isAuthenticated = !!user;
+
+  const sendOTP = async (email: string): Promise<boolean> => {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setUserEmail(email);
+        return true;
+      } else {
+        throw new Error(data.message || 'Failed to send OTP');
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const signup = async (
+    name: string,
+    email: string,
+    password: string,
+    otp: string
+  ): Promise<boolean> => {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, otp }),
+      });
+      const data: { token: string; message: string } = await response.json();
+      if (response.ok) {
+        const decoded: DecodedToken = jwtDecode(data.token);
+        localStorage.setItem('token', data.token);
+        setUser({ id: decoded.userId });
+        return true;
+      } else {
+        throw new Error(data.message || 'Signup failed');
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data: { token: string; message: string } = await response.json();
+      if (response.ok) {
+        const decoded: DecodedToken = jwtDecode(data.token);
+        localStorage.setItem('token', data.token);
+        setUser({ id: decoded.userId });
+        return true;
+      } else {
+        throw new Error(data.message || 'Login failed');
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const verifyEmail = async (code: string): Promise<boolean> => {
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userEmail,
+          otp: code,
+          name: localStorage.getItem('signupName'),
+          password: localStorage.getItem('signupPassword'),
+        }),
+      });
+      const data: { token: string; message: string } = await response.json();
+      if (response.ok) {
+        const decoded: DecodedToken = jwtDecode(data.token);
+        localStorage.setItem('token', data.token);
+        setUser({ id: decoded.userId });
+        localStorage.removeItem('signupName');
+        localStorage.removeItem('signupPassword');
+        return true;
+      } else {
+        throw new Error(data.message || 'Invalid verification code');
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const logout = (): void => {
+    localStorage.removeItem('token');
+    setUser(null);
+    navigate('/login');
+  };
+
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const savedToken = localStorage.getItem('token');
-    if (savedUser && savedToken) {
-      setUser(JSON.parse(savedUser));
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const decoded: DecodedToken = jwtDecode(token);
+        setUser({ id: decoded.userId });
+      } catch (err) {
+        localStorage.removeItem('token');
+        setUser(null);
+      }
     }
   }, []);
 
-  const handleSendOtp = async (email: string): Promise<boolean> => {
-    setUserEmail(email);
-    const success = await sendOtp(email, navigate);
-    if (success) {
-      setNeedsVerification(true);
-    }
-    return success;
-  };
+  return (
+    <AuthContext.Provider
+      value={{ user, userEmail, isAuthenticated, sendOTP, signup, login, verifyEmail, logout }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
 
-  const handleSignup = async (name: string, email: string, password: string): Promise<boolean> => {
-    setUserEmail(email);
-    const success = await signUp(name, email, password, navigate);
-    if (success) {
-      setNeedsVerification(true);
-    }
-    return success;
-  };
-
-  const handleVerifyEmail = async (code: string): Promise<boolean> => {
-    const success = await verifyEmail(code, userEmail, (userData: User) => {
-      setUser(userData);
-    });
-    if (success) {
-      setNeedsVerification(false);
-      navigate('/interests');
-    }
-    return success;
-  };
-
-  const handleLogin = async (email: string, password: string): Promise<boolean> => {
-    const success = await login(email, password, (userData: User) => {
-      setUser(userData);
-    }, navigate);
-    return success;
-  };
-
-  const handleLogout = () => {
-    logout(navigate, setUser);
-  };
-
-  const handleForgotPassword = async (email: string): Promise<boolean> => {
-    return await forgotPassword(email, (value: boolean) => {
-      setUserEmail(value ? email : '');
-    });
-  };
-
-  const handleResetPassword = async (password: string, confirmPassword: string, token: string): Promise<boolean> => {
-    return await resetPassword(password, confirmPassword, token, () => {
-      navigate('/login');
-    });
-  };
-
-  const value: AuthContextType = {
-    user,
-    login: handleLogin,
-    signup: handleSignup,
-    logout: handleLogout,
-    isAuthenticated: !!user,
-    verifyEmail: handleVerifyEmail,
-    needsVerification,
-    userEmail,
-    sendOtp: handleSendOtp,
-    forgotPassword: handleForgotPassword,
-    resetPassword: handleResetPassword,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
